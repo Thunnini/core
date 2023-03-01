@@ -46,44 +46,40 @@ func (btfd BurnTaxFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate 
 
 	msgs := feeTx.GetMsgs()
 
-	// At this point we have already run the DeductFees AnteHandler and taken the fees from the sending account
-	// Now we remove the taxes from the gas reward and immediately burn it
-	if !simulate {
-		// Compute taxes again.
-		taxes := FilterMsgAndComputeTax(ctx, btfd.treasuryKeeper, msgs...)
+	// Compute taxes again.
+	taxes := FilterMsgAndComputeTax(ctx, btfd.treasuryKeeper, msgs...)
 
-		// Record tax proceeds
-		if !taxes.IsZero() {
-			burnSplitRate := btfd.treasuryKeeper.GetBurnSplitRate(ctx)
+	// Record tax proceeds
+	if !taxes.IsZero() {
+		burnSplitRate := btfd.treasuryKeeper.GetBurnSplitRate(ctx)
 
-			if burnSplitRate.IsPositive() {
-				communityDeltaCoins := sdk.NewCoins()
+		if burnSplitRate.IsPositive() {
+			communityDeltaCoins := sdk.NewCoins()
 
-				for _, taxCoin := range taxes {
-					splitcoinAmount := burnSplitRate.MulInt(taxCoin.Amount).RoundInt()
-					communityDeltaCoins = communityDeltaCoins.Add(sdk.NewCoin(taxCoin.Denom, splitcoinAmount))
-				}
-
-				taxes = taxes.Sub(communityDeltaCoins)
-
-				if err = btfd.distrKeeper.FundCommunityPool(
-					ctx,
-					communityDeltaCoins,
-					btfd.accountKeeper.GetModuleAddress(types.FeeCollectorName),
-				); err != nil {
-					return ctx, sdkerrors.Wrapf(sdkerrors.ErrInsufficientFunds, err.Error())
-				}
+			for _, taxCoin := range taxes {
+				splitcoinAmount := burnSplitRate.MulInt(taxCoin.Amount).RoundInt()
+				communityDeltaCoins = communityDeltaCoins.Add(sdk.NewCoin(taxCoin.Denom, splitcoinAmount))
 			}
 
-			if !taxes.IsZero() {
-				if err = btfd.bankKeeper.SendCoinsFromModuleToModule(
-					ctx,
-					types.FeeCollectorName,
-					treasury.BurnModuleName,
-					taxes,
-				); err != nil {
-					return ctx, sdkerrors.Wrapf(sdkerrors.ErrInsufficientFunds, err.Error())
-				}
+			taxes = taxes.Sub(communityDeltaCoins)
+
+			if err = btfd.distrKeeper.FundCommunityPool(
+				ctx,
+				communityDeltaCoins,
+				btfd.accountKeeper.GetModuleAddress(types.FeeCollectorName),
+			); err != nil {
+				return ctx, sdkerrors.Wrapf(sdkerrors.ErrInsufficientFunds, err.Error())
+			}
+		}
+
+		if !taxes.IsZero() {
+			if err = btfd.bankKeeper.SendCoinsFromModuleToModule(
+				ctx,
+				types.FeeCollectorName,
+				treasury.BurnModuleName,
+				taxes,
+			); err != nil {
+				return ctx, sdkerrors.Wrapf(sdkerrors.ErrInsufficientFunds, err.Error())
 			}
 		}
 	}
